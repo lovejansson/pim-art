@@ -1,10 +1,7 @@
 # Pim Art
-A library for creating Javascript Pixel Art programs. 
+A library for creating living pixel art with Javascript. 
 
-## How to use
-- The Art class is the main class for the program. Toggles between play- and pause screen and manages the canvas and assets.
-- Use the object classes for creating art objects; static images and sprites.
-- Collision handling using the Axis-Aligned Bounding Box (AABB) algorithm.
-
-## Dev 
-index.js, assets.json and the folders for audio and images are used for development purposes. 
+## Features
+- Main class ```Art.js``` for toggling between Play and Pause Scenes.
+- Handling of image and audio assets via ```ImagesManager```and ``ÀudioPlayer```.
+- Base classes for creating characters: ```ArtObject```, ```StaticImage``` and ```Sprite```.
