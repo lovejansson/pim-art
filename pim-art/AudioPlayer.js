@@ -35,7 +35,7 @@ export default class AudioPlayer {
         this.#sounds = new Map();
         this.#buffers = new Map();
         this.#playingAudioNodes = new Map();
-        this.onoff = true;
+        this.onoff = false;
 
         this.#audioCtx = new(window.AudioContext || window.webkitAudioContext)();
  

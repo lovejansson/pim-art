@@ -3,7 +3,7 @@ import { NotImplementedError } from "../errors.js";
 
 
 /** 
-* @typedef {import("../Scene.js").Scene} Scene
+* @typedef {import("../Scene.js").default } Scene
 */
 
 /**
@@ -12,18 +12,16 @@ import { NotImplementedError } from "../errors.js";
 export default class ArtObject {
     /**
      * @param {Scene} scene
-     * @param {{ x: number, y: number }} pos
-     * @param {number} width
-     * @param {number} height
+     * @param {Symbol} id
+
      */
-    constructor(scene, pos, width, height) {
+    constructor(scene, id) {
         this.scene = scene;
-        this.pos = pos;
-        this.width = width;
-        this.height = height;
+        this.id = id;
     }
 
     update() {
+    
     }
 
     draw() {
