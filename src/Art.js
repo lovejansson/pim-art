@@ -16,6 +16,7 @@ import ImagesManager from "../ImagesManager.js";
  * @property {Scene} pause The pause scene
  * @property {string} canvas The CSS selector for the canvas element, defaults to "#art-canvas"
  * @property {number} [frameRate] The frame rate, defaults to 60 FPS
+ * @property {boolean} displayGrid Display tile grid during development 
  * @property {{}} [services] Custom services to the art instance
  */
 
@@ -79,7 +80,9 @@ export default class Art {
         this.elapsedPrev = 0;
         this.width = config.width;
         this.height = config.height;
-        this.tileSize = config.tileSize || DEFAULT_TILE_SIZE; 
+        this.tileSize = config.tileSize || DEFAULT_TILE_SIZE;
+                this.displayGrid = config.displayGrid || false;
+
         this.services = config.services ? config.services : null;
         this.keys = {
             up: false,
@@ -142,6 +145,10 @@ export default class Art {
 
                 this.config.play.update();
                 this.config.play.draw(ctx);
+
+                 if(this.displayGrid) {
+                    this.#drawGrid(ctx, this.height / this.tileSize, this.width / this.tileSize, this.tileSize, "white");
+                }
 
             } else {
 
@@ -236,6 +243,34 @@ export default class Art {
         ctx.imageSmoothingEnabled = true; // For smooth scaling of images so that pixel art doesn't look blurry.
 
         return ctx;
+    }
+
+     /**
+     * @param {CanvasRenderingContext2D} ctx 
+     * @param {number} rows 
+     * @param {number} cols
+     * @param {number} cellSize
+     */
+    #drawGrid(ctx, rows, cols, cellSize, strokeColor = "black") {
+
+        ctx.beginPath();
+        ctx.strokeStyle = strokeColor;
+
+        const translateOffset = 0.5; // So that lines don't blur
+
+        for(let r = 0; r < rows; ++r) {
+
+            for (let c = 0; c < cols; ++c) {
+
+                ctx.moveTo((c * cellSize + translateOffset), r * cellSize + translateOffset);
+                ctx.lineTo((c + 1) * cellSize + translateOffset, r * cellSize + translateOffset);
+                ctx.lineTo((c + 1) * cellSize + translateOffset,(r + 1) * cellSize+  translateOffset);
+                ctx.lineTo(c * cellSize + translateOffset, (r + 1) * cellSize + translateOffset);
+                ctx.lineTo(c * cellSize + translateOffset,  r * cellSize + translateOffset);
+            }
+        }
+
+        ctx.stroke();
     }
 }
 
