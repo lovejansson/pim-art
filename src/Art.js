@@ -1,8 +1,8 @@
-import AudioPlayer from "./AudioPlayer.js";
-import ImagesManager from "./ImagesManager.js";
+import AudioPlayer from "../AudioPlayer.js";
+import ImagesManager from "../ImagesManager.js";
 
 /**
- * @typedef {import("./Scene.js").Scene} Scene
+ * @typedef {import("../Scene.js").Scene} Scene
  */
 
 

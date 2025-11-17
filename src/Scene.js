@@ -1,7 +1,7 @@
-import { NotImplementedError} from "./errors.js";
+import { NotImplementedError} from "./src/errors.js";
 
 /**
- * @typedef {import("./Art.js").default} Art
+ * @typedef {import("./src/Art.js").default} Art
  */
 
 export default class Scene {
