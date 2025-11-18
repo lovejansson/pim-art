@@ -2,6 +2,7 @@ import { Art } from "./pim-art/index.js";
 import { createDebugLogger } from "./debugger.js";
 import Play from "./Play.js";
 import Pause from "./Pause.js";
+import "./audio-player/AudioPlayerElement.js";
 
 export const debug = createDebugLogger(true);
 

@@ -1,5 +1,5 @@
 # Pim Art
-A library for creating living pixel art with Javascript. 
+A library and template for creating living pixel art with Javascript. 
 
 ## Features
 - Main class ```Art.js``` for toggling between Play and Pause Scenes.
