@@ -1,4 +1,4 @@
-export const createDebugLogger = (isProd) => (...args) => {
+export const createDebugLogger = (isProd: boolean) => (...args: string[]) => {
     if (!isProd) {
         console.debug(...args);
     }
