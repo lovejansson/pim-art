@@ -1,4 +1,4 @@
-import { Scene } from "./pim-art/index.js";
+import { Scene } from "./lib/index.ts";
 import { BASE_URL } from "./config.js";
 
 export default class Play extends Scene {
@@ -8,16 +8,14 @@ export default class Play extends Scene {
     }
 
     async init() {
+        
     }
 
     update() {
+
     }
 
-
-    /**
-     * @param {CanvasRenderingContext2D} ctx 
-     */
-    draw(ctx) {
+    draw(ctx: CanvasRenderingContext2D) {
 
     }
 

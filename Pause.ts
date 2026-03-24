@@ -1,5 +1,5 @@
 
-import { Scene } from "./pim-art/index.js";
+import { Scene } from "./lib/index.ts";
 import { BASE_URL } from "./config.js";
 
 
@@ -10,12 +10,11 @@ export default class Pause extends Scene {
     }
 
     async init() {
+      
     }
 
-    /**
-     * @param {CanvasRenderingContext2D} ctx 
-     */
-    draw(ctx) {
+    draw(ctx: CanvasRenderingContext2D) {
+    
     }
 
     start(){

@@ -1,8 +1,8 @@
-import { Art } from "./pim-art/index.js";
-import { createDebugLogger } from "./debugger.js";
-import Play from "./Play.js";
-import Pause from "./Pause.js";
-import "./audio-player/AudioPlayerElement.js";
+import { Art } from "./lib/index.ts";
+import { createDebugLogger } from "./debugger.ts";
+import Play from "./Play.ts";
+import Pause from "./Pause.ts";
+import "./audio-player/AudioPlayerElement.ts";
 
 export const debug = createDebugLogger(true);
 
