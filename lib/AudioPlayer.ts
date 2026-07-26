@@ -1,37 +1,37 @@
 export default class AudioPlayer {
     onoff: boolean;
-    #sounds: Map<string, string>;
-    #buffers: Map<string, AudioBuffer>;
-    #playingAudioNodes: Map<string, AudioBufferSourceNode>;
-    #audioCtx: AudioContext;
-    #volumeNode: GainNode;
+    sounds: Map<string, string>;
+    buffers: Map<string, AudioBuffer>;
+    playingAudioNodes: Map<string, AudioBufferSourceNode>;
+    audioCtx: AudioContext;
+    volumeNode: GainNode;
 
     constructor() {
-        this.#sounds = new Map();
-        this.#buffers = new Map();
-        this.#playingAudioNodes = new Map();
+        this.sounds = new Map();
+        this.buffers = new Map();
+        this.playingAudioNodes = new Map();
         this.onoff = false;
 
-        this.#audioCtx = new window.AudioContext();
-        this.#volumeNode = this.#audioCtx.createGain();
-        this.#volumeNode.connect(this.#audioCtx.destination);
+        this.audioCtx = new window.AudioContext();
+        this.volumeNode = this.audioCtx.createGain();
+        this.volumeNode.connect(this.audioCtx.destination);
     }
 
     async add(id: string, path: string): Promise<void> {
-        this.#sounds.set(id, path);
+        this.sounds.set(id, path);
     }
 
     async load(): Promise<void> {
         const promises: Promise<void>[] = [];
 
-        for (const [id, path] of this.#sounds) {
+        for (const [id, path] of this.sounds) {
             promises.push(
                 (async () => {
                     try {
                         const response = await fetch(path);
                         const arrayBuffer = await response.arrayBuffer();
-                        const audioBuffer = await this.#audioCtx.decodeAudioData(arrayBuffer);
-                        this.#buffers.set(id, audioBuffer);
+                        const audioBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
+                        this.buffers.set(id, audioBuffer);
                     } catch (err: any) {
                         throw new AudioFetchError(path, err);
                     }
@@ -40,38 +40,38 @@ export default class AudioPlayer {
         }
 
         await Promise.all(promises);
-        this.#sounds.clear();
+        this.sounds.clear();
     }
 
     play(id: string, loop = false): void {
         if (!this.onoff) throw new AudioPlayerOffStateError("play");
 
-        if (this.#playingAudioNodes.has(id)) return; // already playing
+        if (this.playingAudioNodes.has(id)) return; // already playing
 
-        if (this.#audioCtx.state === "suspended") this.#audioCtx.resume();
+        if (this.audioCtx.state === "suspended") this.audioCtx.resume();
 
-        const audioBuffer = this.#buffers.get(id);
+        const audioBuffer = this.buffers.get(id);
         if (!audioBuffer) throw new AudioNotFoundError(id);
 
-        const audioSource = this.#audioCtx.createBufferSource();
+        const audioSource = this.audioCtx.createBufferSource();
         audioSource.buffer = audioBuffer;
         audioSource.loop = loop;
 
-        audioSource.connect(this.#volumeNode);
+        audioSource.connect(this.volumeNode);
         audioSource.start();
 
-        this.#playingAudioNodes.set(id, audioSource);
+        this.playingAudioNodes.set(id, audioSource);
         audioSource.addEventListener("ended", () => {
-            this.#playingAudioNodes.delete(id);
+            this.playingAudioNodes.delete(id);
         });
     }
 
     isPlaying(id: string): boolean {
-        return this.#playingAudioNodes.has(id);
+        return this.playingAudioNodes.has(id);
     }
 
     stop(id: string): void {
-        const source = this.#playingAudioNodes.get(id);
+        const source = this.playingAudioNodes.get(id);
         if (source) {
             source.stop();
         }
@@ -79,7 +79,7 @@ export default class AudioPlayer {
 
     setVolume(volume: number): void {
         if (volume < 0 || volume > 1) throw new InvalidVolumeRangeError(volume);
-        this.#volumeNode.gain.setValueAtTime(volume, this.#audioCtx.currentTime);
+        this.volumeNode.gain.setValueAtTime(volume, this.audioCtx.currentTime);
     }
 
     onOffSwitch(): void {
@@ -88,7 +88,7 @@ export default class AudioPlayer {
     }
 
     private turnOffAllAudios(): void {
-        for (const audioSource of this.#playingAudioNodes.values()) {
+        for (const audioSource of this.playingAudioNodes.values()) {
             audioSource.stop();
         }
     }

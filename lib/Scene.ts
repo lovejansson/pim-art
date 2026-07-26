@@ -1,52 +1,46 @@
 import Art from "./Art.ts";
+import type ArtObject from "./objects/ArtObject.ts";
 
-/**
- * Base abstract class for scenes in the game.
- */
 export default abstract class Scene {
-    /**
-     * The Art instance this scene belongs to.
-     */
-    art: Art | null;
+  art: Art | null;
+  objects: ArtObject[];
 
-    constructor() {
-        if (new.target === Scene) {
-            throw new TypeError("Cannot construct Scene instances directly");
-        }
-        this.art = null; // Will be set by the Art class on initialization
+  constructor() {
+    if (new.target === Scene) {
+      throw new TypeError("Cannot construct Scene instances directly");
     }
+    this.art = null; // Will be set by the Art class on initialization
+    this.objects = [];
+  }
 
-    /**
-     * Initialize the scene (load assets, setup objects, etc.)
-     */
-    abstract init(): Promise<void>;
+  abstract init(): Promise<void>;
 
-    /**
-     * Draw the scene to the canvas.
-     */
-    abstract draw(ctx: CanvasRenderingContext2D): void;
+  addObject(obj: ArtObject): void {
+    if (this.objects.some((o) => o.id === obj.id))
+      throw new Error(`Object with id ${obj.id} is already added to scene.`);
 
-    /**
-     * Update the scene state (game logic, animations, etc.)
-     * Optional to override if needed.
-     */
-    update(elapsed: number): void {
-        // Can be overridden by subclasses
+    this.objects.push(obj);
+  }
+
+  removeObject(obj: ArtObject): void {
+    this.objects = this.objects.filter((o) => o.id !== obj.id);
+  }
+
+  sortObjects(compareFn: (a: ArtObject, b: ArtObject) => number): void {
+    this.objects.sort(compareFn);
+  }
+
+  update(dt: number): void {
+    for (const obj of this.objects) {
+      obj.update(dt);
     }
+  }
 
-    /**
-     * Called when the scene starts.
-     * Optional to override if needed.
-     */
-    start(): void {
-        // Can be overridden by subclasses
-    }
+  start(): void {
+    // Can be overridden by subclasses
+  }
 
-    /**
-     * Called when the scene stops.
-     * Optional to override if needed.
-     */
-    stop(): void {
-        // Can be overridden by subclasses
-    }
+  stop(): void {
+    // Can be overridden by subclasses
+  }
 }

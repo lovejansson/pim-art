@@ -1,4 +1,4 @@
-import Scene from "../Scene.js";
+import type Scene from "../Scene.ts";
 
 export default abstract class ArtObject {
     id: number;
@@ -12,7 +12,6 @@ export default abstract class ArtObject {
         this.id = scene.art.getId();
     }
 
-    update(elapsed: number): void {}
-
-    abstract draw(ctx: CanvasRenderingContext2D): void;
+    update(_dt: number): void {}
 }
+

@@ -1,1 +1,4 @@
 # Todo 
+
+* zod validation for spritesheets *
+- a way to make sure that these types of errors is noticed directly on startup!

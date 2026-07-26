@@ -1,22 +1,23 @@
 import AudioPlayer from "./AudioPlayer.ts";
-import ImagesManager from "./ImagesManager.ts";
 import Scene from "./Scene.ts";
+import SpritesheetsManager from "./SpritesheetsManager.ts";
+import ImagesManager from "./ImagesManager.ts";
+import Renderer from "./Renderer.ts";
 
 export type ArtConfig = {
   width: number;
   height: number;
-  tileSize?: number;
+  tileSize: number;
   play: Scene;
   pause: Scene;
-  canvas?: string;
-  frameRate?: number;
+  container?: string;
   displayGrid: boolean;
+  gridColor?: string;
   services?: Record<string, any>;
+  scale?: "hd" | "4k";
 };
 
-const FRAME_RATE_DEFAULT = 60;
-const CANVAS_SELECTOR_DEFAULT = "#art-canvas";
-const DEFAULT_TILE_SIZE = 16;
+const CONTAINER_SELECTOR_DEFAULT = "#art-container";
 
 export default class Art {
   keys: {
@@ -27,35 +28,41 @@ export default class Art {
     space: boolean;
   };
 
-  isPlaying: boolean;
+  spritesheets!: SpritesheetsManager;
   images: ImagesManager;
   audio: AudioPlayer;
-  config: ArtConfig;
-  ctx!: CanvasRenderingContext2D;
   services: Record<string, any> | null;
 
   width: number;
   height: number;
   tileSize: number;
   displayGrid: boolean;
-  frameRate: number;
-  startTime: Date | null;
-  elapsedAcc: number;
-  elapsedPrev: number;
+  gridColor: string;
+  scale: "hd" | "4k" | null;
 
-  #currId: number;
+  isPlaying: boolean;
+
+  private config: ArtConfig;
+  private startTime: Date | null;
+  private currId: number;
+  private renderer!: Renderer;
 
   constructor(config: ArtConfig) {
     this.images = new ImagesManager();
+    this.renderer = new Renderer(this, config);
+
+    this.spritesheets = new SpritesheetsManager();
     this.audio = new AudioPlayer();
+
     this.isPlaying = false;
+
     this.config = config;
-    this.elapsedAcc = 0;
-    this.elapsedPrev = 0;
     this.width = config.width;
     this.height = config.height;
-    this.tileSize = config.tileSize ?? DEFAULT_TILE_SIZE;
+    this.tileSize = config.tileSize;
     this.displayGrid = config.displayGrid ?? false;
+    this.gridColor = config.gridColor ?? "white";
+    this.scale = config.scale ?? null;
     this.services = config.services ?? null;
 
     this.keys = {
@@ -65,9 +72,9 @@ export default class Art {
       left: false,
       space: false,
     };
-    this.frameRate = config.frameRate ?? FRAME_RATE_DEFAULT;
+
     this.startTime = null;
-    this.#currId = -1;
+    this.currId = -1;
   }
 
   enterFullScreen(): void {
@@ -82,88 +89,22 @@ export default class Art {
   }
 
   getId(): number {
-    this.#currId++;
-    return this.#currId;
+    this.currId++;
+    return this.currId;
   }
 
-  async start(): Promise<void> {
-    await this.#init();
-    this.#privatePlay(this.ctx);
-  }
-
-  async play(): Promise<void> {
-    this.audio.onOffSwitch();
-    this.config.play.start();
-    this.config.pause.stop();
-    this.isPlaying = true;
-  }
-
-  async pause(): Promise<void> {
-    this.audio.onOffSwitch();
-    this.config.pause.start();
-    this.config.play.stop();
-    this.isPlaying = false;
-  }
-
-  async #privatePlay(
-    ctx: CanvasRenderingContext2D,
-    elapsed = 0,
-  ): Promise<void> {
-    try {
-      this.elapsedAcc += elapsed - this.elapsedPrev;
-
-      if (this.elapsedAcc >= 1000 / this.frameRate) {
-        const currentTransform = ctx.getTransform();
-        ctx.clearRect(
-          0 - currentTransform.e,
-          0 - currentTransform.f,
-          this.width,
-          this.height,
-        );
-
-        if (this.isPlaying) {
-          this.config.play.update(elapsed);
-          this.config.play.draw(ctx);
-
-          if (this.displayGrid) {
-            this.#drawGrid(
-              ctx,
-              this.height / this.tileSize,
-              this.width / this.tileSize,
-              this.tileSize,
-              "white",
-            );
-          }
-        } else {
-          this.config.pause.update(elapsed);
-          this.config.pause.draw(ctx);
-        }
-
-        this.elapsedAcc = 0;
-      }
-
-      this.elapsedPrev = elapsed;
-    } catch (e) {
-      if (this.startTime) {
-        const { hours, minutes, seconds } = diffHMS(new Date(), this.startTime);
-        console.log(`Time since start ${hours}:${minutes}:${seconds}`);
-      }
-      console.error(e);
-      await this.pause();
-    }
-
-    requestAnimationFrame((t) => this.#privatePlay(ctx, t));
-  }
-
-  async #init(): Promise<void> {
+  async init(): Promise<void> {
     this.startTime = new Date();
-    const ctx = this.#initCanvas(this.config.canvas ?? CANVAS_SELECTOR_DEFAULT);
 
     this.config.play.art = this;
     this.config.pause.art = this;
 
     await this.config.play.init();
     await this.config.pause.init();
+
+    await this.renderer.init(
+      this.config.container ?? CONTAINER_SELECTOR_DEFAULT,
+    );
 
     window.addEventListener("keydown", (e) => {
       const key = e.key.toLowerCase();
@@ -182,45 +123,29 @@ export default class Art {
       if (["arrowleft", "a"].includes(key)) this.keys.left = false;
       if (key === " ") this.keys.space = false;
     });
-
-    this.ctx = ctx;
-  }
-
-  #initCanvas(selector: string): CanvasRenderingContext2D {
-    const canvas = document.querySelector<HTMLCanvasElement>(selector);
-    if (!canvas) throw new Error("canvas is null");
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("ctx is null");
-
-    canvas.width = this.width;
-    canvas.height = this.height;
-    ctx.imageSmoothingEnabled = true;
-
-    return ctx;
-  }
-
-  #drawGrid(
-    ctx: CanvasRenderingContext2D,
-    rows: number,
-    cols: number,
-    cellSize: number,
-    strokeColor = "black",
-  ) {
-    ctx.beginPath();
-    ctx.strokeStyle = strokeColor;
-    const offset = 0.5;
-
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        ctx.moveTo(c * cellSize + offset, r * cellSize + offset);
-        ctx.lineTo((c + 1) * cellSize + offset, r * cellSize + offset);
-        ctx.lineTo((c + 1) * cellSize + offset, (r + 1) * cellSize + offset);
-        ctx.lineTo(c * cellSize + offset, (r + 1) * cellSize + offset);
-        ctx.lineTo(c * cellSize + offset, r * cellSize + offset);
+    try {
+      this.renderer.run();
+    } catch (e) {
+      if (this.startTime) {
+        const { hours, minutes, seconds } = diffHMS(new Date(), this.startTime);
+        console.log(`Time since start ${hours}:${minutes}:${seconds}`);
       }
+      console.error(e);
     }
-    ctx.stroke();
+  }
+
+  async play(): Promise<void> {
+    this.audio.onOffSwitch();
+    this.config.play.start();
+    this.config.pause.stop();
+    this.isPlaying = true;
+  }
+
+  async pause(): Promise<void> {
+    this.audio.onOffSwitch();
+    this.config.pause.start();
+    this.config.play.stop();
+    this.isPlaying = false;
   }
 }
 

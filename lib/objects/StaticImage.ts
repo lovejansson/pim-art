@@ -25,19 +25,4 @@ export default class StaticImage extends ArtObject {
     this.halfHeight = height / 2;
     this.image = image;
   }
-
-  update(): void {
-    // static image → no update needed
-  }
-
-  draw(ctx: CanvasRenderingContext2D): void {
-    if (this.scene.art === null)
-      throw new Error("art is not set on scene object");
-
-    const img = this.scene.art.images.get(this.image);
-
-    if (!img) return; // safety check
-
-    ctx.drawImage(img, this.pos.x, this.pos.y);
-  }
 }
