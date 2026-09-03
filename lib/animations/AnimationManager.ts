@@ -16,7 +16,8 @@ type Animation = {
 
 export type AnimationOptions = {
   repeat?: number | boolean; // true = loop forever, number = fixed repeat count, false = play once
-  overlay?: OverlayOptions;
+  overlays?: OverlayOptions[];
+  reverse?: boolean;
 };
 export type OverlayOptions = {
   name: string;
@@ -27,7 +28,8 @@ export type OverlayOptions = {
 };
 
 type OverlayState = {
-  animationKey: string;
+  name: string;
+  anim: Animation;
   dx: number;
   dy: number;
   drawBehind: boolean;
@@ -35,12 +37,14 @@ type OverlayState = {
 };
 
 type PlayingState = {
-  animationKey: string;
+  name: string;
+  anim: Animation;
   frameIndex: number;
   elapsed: number;
   loopCount: number;
   repeat: number | boolean;
-  overlay?: OverlayState;
+  overlays: OverlayState[];
+  reverse: boolean;
 };
 
 type RegisterSpritesheetOptions = {
@@ -54,7 +58,7 @@ export type FrameChangeCallback = (
   anim: string,
   frame: number,
   totalFrames: number,
-  loopCount: number
+  loopCount: number,
 ) => void;
 
 export type LoopCallback = (animation: string, loopCount: number) => void;
@@ -78,14 +82,8 @@ export default class AnimationManager {
     this.defaults = new Map();
     this.playing = null;
   }
- registerSpritesheet(
-    key: string,
-    options?: RegisterSpritesheetOptions,
-  ): void {
-
-    const sheet = this.sprite.scene.art!.spritesheets.get(
-      key,
-    ) as Spritesheet;
+  registerSpritesheet(key: string, options?: RegisterSpritesheetOptions): void {
+    const sheet = this.sprite.scene.art!.spritesheets.get(key) as Spritesheet;
 
     for (const tag of sheet.data.meta.frameTags) {
       const frames: Frame[] = [];
@@ -110,7 +108,6 @@ export default class AnimationManager {
 
       this.animations.set(tag.name, { frames, spritesheet: sheet.image });
 
-
       if (options?.defaults?.[tag.name] !== undefined) {
         this.defaults.set(tag.name, options?.defaults[tag.name]);
       }
@@ -125,30 +122,46 @@ export default class AnimationManager {
 
     this.currentAnimation = name;
 
+    let overlays = [];
+
+    if (options?.overlays) {
+      for (const o of options.overlays) {
+        const overlayAnim = this.animations.get(o.name);
+
+        if (overlayAnim === undefined)
+          throw new AnimationNotAddedError(o.name);
+
+        overlays.push({
+          name: o.name,
+          anim: overlayAnim,
+          dx: o.dx ?? 0,
+          dy: o.dy ?? 0,
+          drawBehind: o.drawBehind ?? false,
+          drawOnTop: o.drawOnTop ?? false,
+        });
+      }
+    }
+
+    const firstFrameIdx = options?.reverse ? anim.frames.length - 1 : 0;
+
     this.playing = {
-      animationKey: name,
-      frameIndex: 0,
+      name: name,
+      anim,
+      frameIndex: firstFrameIdx,
       elapsed: 0,
       loopCount: 0,
       repeat,
-      overlay: options?.overlay
-        ? {
-            animationKey: options.overlay.name,
-            dx: options.overlay.dx ?? 0,
-            dy: options.overlay.dy ?? 0,
-            drawBehind: options.overlay.drawBehind ?? false,
-            drawOnTop: options.overlay.drawOnTop ?? false,
-          }
-        : undefined,
+      reverse: options?.reverse ?? false,
+      overlays: overlays,
     };
 
     if (this.onFrameChange) {
-      this.onFrameChange(name, 0, anim.frames.length, 0);
+      this.onFrameChange(name, firstFrameIdx, anim.frames.length, 0);
     }
   }
 
   stop(name: string): void {
-    if (this.playing?.animationKey === name) {
+    if (this.playing?.name === name) {
       this.playing = null;
       this.currentAnimation = null;
     }
@@ -157,61 +170,87 @@ export default class AnimationManager {
   update(dt: number): void {
     if (this.playing === null) return;
 
-    const anim = this.animations.get(this.playing.animationKey);
-    if (!anim) return;
-
-    const frame = anim.frames[this.playing.frameIndex];
+    const frame = this.playing.anim.frames[this.playing.frameIndex];
 
     this.playing.elapsed += dt;
 
     if (this.playing.elapsed < frame.duration) return;
 
     this.playing.elapsed -= frame.duration;
-    this.playing.frameIndex++;
 
-    if (this.playing.frameIndex < anim.frames.length) {
-      if (this.onFrameChange) {
-        this.onFrameChange(
-          this.playing.animationKey,
-          this.playing.frameIndex,
-          anim.frames.length,
-          this.playing.loopCount
-        );
+    if (this.playing.reverse) {
+      this.playing.frameIndex--;
+      if (this.playing.frameIndex > -1) {
+        if (this.onFrameChange) {
+          this.onFrameChange(
+            this.playing.name,
+            this.playing.frameIndex,
+            this.playing.anim.frames.length,
+            this.playing.loopCount,
+          );
+        }
+        return;
       }
-      return;
+    } else {
+      this.playing.frameIndex++;
+      if (this.playing.frameIndex < this.playing.anim.frames.length) {
+        if (this.onFrameChange) {
+          this.onFrameChange(
+            this.playing.name,
+            this.playing.frameIndex,
+            this.playing.anim.frames.length,
+            this.playing.loopCount,
+          );
+        }
+        return;
+      }
     }
 
     const { repeat } = this.playing;
 
     if (repeat === false) {
-      const name = this.playing.animationKey;
+      const name = this.playing.name;
       this.playing = null;
       this.currentAnimation = null;
       if (this.onComplete) this.onComplete(name);
     } else if (typeof repeat === "number") {
       this.playing.loopCount++;
 
-      if (this.playing.loopCount >= repeat) {
-        const name = this.playing.animationKey;
+      if (this.playing.loopCount === repeat) {
+        const name = this.playing.name;
         this.playing = null;
         this.currentAnimation = null;
         if (this.onComplete) this.onComplete(name);
       } else {
-        this.playing.frameIndex = 0;
-        if (this.onLoop)
-          this.onLoop(this.playing.animationKey, this.playing.loopCount);
+        const firstFrameIdx = this.playing.reverse
+          ? this.playing.anim.frames.length - 1
+          : 0;
+        this.playing.frameIndex = firstFrameIdx;
+        if (this.onLoop) this.onLoop(this.playing.name, this.playing.loopCount);
         if (this.onFrameChange) {
-          this.onFrameChange(this.playing.animationKey, 0, anim.frames.length,  this.playing.loopCount);
+          this.onFrameChange(
+            this.playing.name,
+            firstFrameIdx,
+            this.playing.anim.frames.length,
+            this.playing.loopCount,
+          );
         }
       }
     } else {
       this.playing.loopCount++;
 
-      this.playing.frameIndex = 0;
-      if (this.onLoop)
-        this.onLoop(this.playing.animationKey, this.playing.loopCount);
+      const firstFrameIdx = this.playing.reverse
+        ? this.playing.anim.frames.length - 1
+        : 0;
+      this.playing.frameIndex = firstFrameIdx;
+      if (this.onLoop) this.onLoop(this.playing.name, this.playing.loopCount);
       if (this.onFrameChange) {
-        this.onFrameChange(this.playing.animationKey, 0, anim.frames.length, this.playing.loopCount);
+        this.onFrameChange(
+          this.playing.name,
+          firstFrameIdx,
+          this.playing.anim.frames.length,
+          this.playing.loopCount,
+        );
       }
     }
   }
@@ -219,19 +258,17 @@ export default class AnimationManager {
   draw(ctx: CanvasRenderingContext2D): void {
     if (this.playing === null) return;
 
-    const anim = this.animations.get(this.playing.animationKey);
-    if (!anim) return;
+    const frame = this.playing.anim.frames[this.playing.frameIndex];
 
-    const frameIndex = Math.min(
-      this.playing.frameIndex,
-      anim.frames.length - 1,
+    const image = this.sprite.scene.art!.images.get(
+      this.playing.anim.spritesheet,
     );
-    const frame = anim.frames[frameIndex];
-    const image = this.sprite.scene.art!.images.get(anim.spritesheet);
 
-    if (this.playing.overlay?.drawBehind) {
-      this.drawOverlay(ctx, this.playing.overlay, frameIndex);
-    }
+    this.drawOverlay(
+      ctx,
+      this.playing.overlays.filter((o) => o.drawBehind),
+      this.playing.frameIndex,
+    );
 
     ctx.drawImage(
       image,
@@ -245,34 +282,41 @@ export default class AnimationManager {
       this.sprite.height,
     );
 
-    if (this.playing.overlay?.drawOnTop) {
-      this.drawOverlay(ctx, this.playing.overlay, frameIndex);
-    }
+    this.drawOverlay(
+      ctx,
+      this.playing.overlays.filter((o) => o.drawOnTop),
+      this.playing.frameIndex,
+    );
   }
 
   private drawOverlay(
     ctx: CanvasRenderingContext2D,
-    overlay: OverlayState,
+    overlays: OverlayState[],
     mainFrameIndex: number,
   ): void {
-    const overlayAnim = this.animations.get(overlay.animationKey);
-    if (!overlayAnim) return;
+    if (this.playing === null) return;
 
-    const frameIndex = Math.min(mainFrameIndex, overlayAnim.frames.length - 1);
-    const frame = overlayAnim.frames[frameIndex];
-    const image = this.sprite.scene.art!.images.get(overlayAnim.spritesheet);
 
-    ctx.drawImage(
-      image,
-      frame.x,
-      frame.y,
-      frame.w,
-      frame.h,
-      this.sprite.pos.x + this.sprite.drawOffset.x + overlay.dx,
-      this.sprite.pos.y + this.sprite.drawOffset.y + overlay.dy,
-      this.sprite.width,
-      this.sprite.height,
-    );
+    // Currently the overlay animations frames are allowed to not sync with the main animation bc sometimes there is just an overlay image which repeats...
+    // might have to provide separate update logic for overlays in the future.
+
+    for (const o of overlays) {
+      const frameIdx = Math.min(mainFrameIndex, o.anim.frames.length - 1);
+      const frame = o.anim.frames[frameIdx];
+      const image = this.sprite.scene.art!.images.get(o.anim.spritesheet);
+
+      ctx.drawImage(
+        image,
+        frame.x,
+        frame.y,
+        frame.w,
+        frame.h,
+        this.sprite.pos.x + this.sprite.drawOffset.x + o.dx,
+        this.sprite.pos.y + this.sprite.drawOffset.y + o.dy,
+        this.sprite.width,
+        this.sprite.height,
+      );
+    }
   }
 
   getEstimatedDistanceForAnim(
@@ -281,6 +325,10 @@ export default class AnimationManager {
   ): { x: number; y: number } {
     const frameCount = this.getFrameCount(name);
     return { x: frameCount * vel.x, y: frameCount * vel.y };
+  }
+
+  hasPlayingAnimation(): boolean {
+    return this.currentAnimation !== null;
   }
 
   isPlaying(name: string): boolean {
@@ -293,16 +341,22 @@ export default class AnimationManager {
 
   isLastFrame(): boolean {
     if (!this.playing) return false;
-    const anim = this.animations.get(this.playing.animationKey);
-    return this.playing.frameIndex === (anim?.frames.length ?? 1) - 1;
+    const lastFrame = this.playing.reverse
+      ? 0
+      : this.playing.anim.frames.length - 1;
+
+    return this.playing.frameIndex === lastFrame;
   }
 
   getFrameCount(name: string): number {
-    return this.animations.get(name)?.frames.length ?? 0;
+    const anim = this.animations.get(name);
+    if (anim === undefined) throw new AnimationNotAddedError(name);
+    return anim.frames.length;
   }
 
   get loopCount(): number {
-    return this.playing?.loopCount ?? 0;
+    if (this.playing === null) throw new Error("No animation is playing");
+    return this.playing.loopCount;
   }
 }
 

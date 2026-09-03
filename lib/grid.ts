@@ -1,208 +1,202 @@
-import type { Cell } from "./types.ts";
-import { isSameCell, randomEl } from "./utils.ts";
+import { createGrid, getRandomFreeTile } from "../grid";
+import type Scene from "./Scene";
+import type { Tile, Vec2 } from "./types";
+import { posToTile } from "./utils";
 
-export function createGrid(
-  rows: number,
-  cols: number,
-  defaultCellValue: any = null,
-) {
-  const grid = [];
-  for (let r = 0; r < rows; ++r) {
-    const row = [];
-    for (let c = 0; c < cols; ++c) {
-      const value = defaultCellValue;
-      row.push(value);
-    }
+type OccupiedTileState = Map<string, { ground: GroundArea; sprite: number }>;
+type TempBlockedTileState = Map<string, { ground: GroundArea; sprite: number }>;
 
-    grid.push(row);
-  }
-
-  return grid;
+export enum GroundArea {
+  GRASS,
+  NOT_WALKABLE,
+  STROLL_SPOT,
+  GRAVEL,
+  BRICKS,
+  SKATE_GROUND,
+  TRICK_GROUND,
+  POND,
+  OCCUPIED,
+  TEMP_BLOCK,
+  BRIDGE,
 }
 
-export function findClosestFreeCell(
-  from: Cell,
-  grid: (0 | 1)[][],
-  walkableTileValues: number[] = [0],
-) {
-  const rows = grid.length;
-  const cols = grid[0].length;
+export default class Grid {
+  private grid: GroundArea[][];
+  private occupiedTileState: OccupiedTileState;
+  private tempBlockedTileState: TempBlockedTileState;
+  private scene: Scene;
+  isActive: boolean;
 
-  const visited: boolean[][] = createGrid(rows, cols, false);
-  const queue: Cell[] = [];
-
-  let curr: Cell = { ...from };
-
-  queue.push(from);
-
-  visited[from.row][from.col] = true;
-
-  while (queue.length > 0) {
-    curr = queue.shift()!; // I know it is not empty since while loop is only running when length > 0.
-
-    for (const n of getNeighbours(curr, grid)) {
-      if (walkableTileValues.includes(grid[n.row][n.col])) {
-        return n;
-      } else if (!visited[n.row][n.col]) {
-        queue.push(n);
-        visited[n.row][n.col] = true;
-      }
-    }
+  constructor(scene: Scene) {
+    this.occupiedTileState = new Map();
+    this.tempBlockedTileState = new Map();
+    this.grid = [];
+    this.scene = scene;
+    this.isActive = false;
   }
 
-  return null;
-}
-
-export function getRandomFreeCell(
-  grid: (0 | 1)[][],
-  walkableTileValues: number[] = [0],
-) {
-  const freeCells: Cell[] = [];
-
-  for (let r = 0; r < grid.length; ++r) {
-    for (let c = 0; c < grid[r].length; ++c) {
-      if (walkableTileValues.includes(grid[r][c])) {
-        freeCells.push({ row: r, col: c });
-      }
-    }
+  init(rows: number, cols: number) {
+    this.grid = createGrid(rows, cols, GroundArea.NOT_WALKABLE);
+    this.isActive = true;
   }
 
-  return randomEl(freeCells);
-}
+  setTileValue(row: number, col: number, value: GroundArea) {
+    if (this.isActive && this.grid.length === 0)
+      throw new Error("Grid is uninitialized!");
+    this.grid[row][col] = value;
+  }
 
-export function createPathAStar(
-  from: Cell,
-  to: Cell,
-  grid: (0 | 1)[][],
-  walkableTileValues: number[] = [0],
-): Cell[] {
-  // if (!cellIsWithinBounds(from, grid))
-  //   throw new Error("'from' cell is out of bounds");
-  // if (!cellIsWithinBounds(to, grid))
-  //   throw new Error("'to' cell is out of bounds");
+  getGrid(): GroundArea[][] {
+    if (this.isActive && this.grid.length === 0)
+      throw new Error("Grid is uninitialized!");
+    return this.grid;
+  }
 
-  // console.log(from, to);
-
-  if(isSameCell(from, to)) throw new Error("from cell and to cell are the same!")
-  
-
-  const rows = grid.length;
-  const cols = grid[0].length;
-
-  const manhattan = (a: Cell, b: Cell) =>
-    Math.abs(b.row - a.row) + Math.abs(b.col - a.col);
-
-  const heuristic = manhattan;
-
-  const reconstructPath = (pathMap: (Cell | null)[][]): Cell[] => {
-    let curr: Cell | null = to;
-    const path: Cell[] = [to];
-
-    while (curr) {
-      curr = pathMap[curr.row][curr.col];
-      if (curr) path.push(curr);
+  getGround(tile: Tile): GroundArea {
+    if (this.isActive && this.grid.length === 0)
+      throw new Error("Grid is uninitialized!");
+    if (!this.isWithinGridBounds(tile.row, tile.col)) {
+      throw new Error("Tile is out of bounds");
     }
 
-    return path.reverse();
-  };
+    const groundTile = this.grid[tile.row][tile.col];
 
-  const openList: Cell[] = [from];
-  const closeList: Cell[] = [];
+    if (groundTile == GroundArea.OCCUPIED) {
+      const occupiedState = this.occupiedTileState.get(this.getTileKey(tile));
 
-  const pathMap = createGrid(rows, cols, null);
-  const gScores = createGrid(rows, cols, Infinity);
-  const fScores = createGrid(rows, cols, Infinity);
+      if (occupiedState === undefined)
+        throw new Error(
+          "Invalid occupied tile state, missing ground information.",
+        );
 
-  gScores[from.row][from.col] = 0;
-  fScores[from.row][from.col] = heuristic(from, to);
+      return occupiedState.ground;
+    }
 
-  while (openList.length > 0) {
-    // Find cell with current lowest f score
-    const curr = openList.reduce((lowestF, c) =>
-      fScores[c.row][c.col] < fScores[lowestF.row][lowestF.col] ? c : lowestF,
+    return groundTile;
+  }
+
+  getRandomFreeTile(walkableTiles?: GroundArea[]): Tile | null {
+    if (this.isActive && this.grid.length === 0)
+      throw new Error("Grid is uninitialized!");
+    return getRandomFreeTile(this.grid, walkableTiles);
+  }
+
+  isTileWalkable(
+    tile: Tile,
+    walkableTiles: GroundArea[] = [GroundArea.GRASS],
+  ): boolean {
+    if (this.isActive && this.grid.length === 0)
+      throw new Error("Grid is uninitialized!");
+
+    if (!this.isWithinGridBounds(tile.row, tile.col))
+      throw new Error(`Tile out of bounds: ${tile.row}:${tile.col}`);
+
+    const groundTile = this.getGround(tile);
+
+    return walkableTiles.includes(groundTile) && !this.isTileOccupied(tile);
+  }
+
+  getSpriteAtOccupiedTile(tile: Tile): number {
+    const key = this.getTileKey(tile);
+    const state = this.occupiedTileState.get(key);
+
+    if (state === undefined) throw new Error("Tile is not occupied!");
+
+    return state.sprite;
+  }
+
+  isTileOccupied(tile: Tile): boolean {
+    return this.occupiedTileState.has(this.getTileKey(tile));
+  }
+
+  blockTile(id: number, pos: Vec2) {
+    const { row, col } = this.getGridTileFromPos(pos);
+    const key = this.getTileKey({ row, col });
+
+    if (this.tempBlockedTileState.has(key)) {
+      throw new Error(`Tile is  already temporary blocked ${row}:${col}`);
+    }
+
+    this.tempBlockedTileState.set(key, {
+      ground: this.grid[row][col],
+      sprite: id,
+    });
+
+    this.grid[row][col] = GroundArea.TEMP_BLOCK;
+  }
+
+  unBlockTile(id: number, pos: Vec2): void {
+    const { row, col } = this.getGridTileFromPos(pos);
+    const key = this.getTileKey({ row, col });
+    const state = this.tempBlockedTileState.get(key);
+
+    if (state === undefined)
+      throw new Error("This tile is not temporary blocked");
+    if (state.sprite !== id)
+      throw new Error(`Tile is temporary blocked by other sprite`);
+
+    this.grid[row][col] = state.ground;
+    this.tempBlockedTileState.delete(key);
+  }
+
+  occupyTile(id: number, pos: Vec2): void {
+    const { row, col } = this.getGridTileFromPos(pos);
+    const key = this.getTileKey({ row, col });
+
+    if (this.occupiedTileState.has(key)) {
+      throw new Error(`Tile is  already occupied ${row}:${col}`);
+    }
+
+    this.occupiedTileState.set(key, {
+      ground: this.grid[row][col],
+      sprite: id,
+    });
+
+    this.grid[row][col] = GroundArea.OCCUPIED;
+  }
+
+  unoccupyTile(id: number, pos: Vec2): void {
+    const { row, col } = this.getGridTileFromPos(pos);
+
+    const key = this.getTileKey({ row, col });
+    const state = this.occupiedTileState.get(key);
+
+    if (state === undefined) throw new Error("This tile is not occupied");
+
+    if (state.sprite !== id)
+      throw new Error(`Tile is occupied by other sprite`);
+
+    this.grid[row][col] = state.ground;
+    this.occupiedTileState.delete(key);
+  }
+
+  private getGridTileFromPos(pos: Vec2): Tile {
+    const tile = posToTile(pos, this.scene.art.tileSize);
+
+    if (tile.row % 1 !== 0 || tile.col % 1 !== 0)
+      throw new Error("Not a whole tile");
+    if (
+      tile.row < 0 ||
+      tile.row >= this.grid.length ||
+      tile.col < 0 ||
+      tile.col >= this.grid[0].length
+    ) {
+      throw new Error("Tile is out of bounds.");
+    }
+
+    return tile;
+  }
+
+  private getTileKey(tile: Tile): string {
+    return `${tile.row},${tile.col}`;
+  }
+
+  private isWithinGridBounds(row: number, col: number): boolean {
+    return (
+      row >= 0 &&
+      row < this.grid.length &&
+      col >= 0 &&
+      col < this.grid[0].length
     );
-
-    if (curr.row === to.row && curr.col === to.col) break;
-
-    const neighbours = getNeighbours(curr, grid);
-    const estimateG = gScores[curr.row][curr.col] + 1;
-
-    for (const n of neighbours) {
-      // Skip non-walkable
-      if (!walkableTileValues.includes(grid[n.row][n.col])) continue;
-
-      const h = heuristic(n, to);
-      const f = estimateG + h;
-
-      const inClosed = closeList.find(
-        (c) => c.row === n.row && c.col === n.col,
-      );
-      const inOpen = openList.find((c) => c.row === n.row && c.col === n.col);
-
-      // Update g and f scores if the new g is better than current g
-      if (estimateG < gScores[n.row][n.col]) {
-        gScores[n.row][n.col] = estimateG;
-        fScores[n.row][n.col] = f;
-        pathMap[n.row][n.col] = curr;
-
-        if (inClosed) {
-          closeList.splice(closeList.indexOf(n), 1);
-          openList.push(n);
-        } else if (!inOpen) {
-          openList.push(n);
-        }
-      }
-    }
-
-    // curr is processed and done, remove from open list
-    const index = openList.findIndex(
-      (c) => c.row === curr.row && c.col === curr.col,
-    );
-    if (index !== -1) openList.splice(index, 1);
-
-    // Add curr to close list so that it can be brought back if better path to it is found
-    closeList.push(curr);
   }
-
-  if (!pathMap[to.row][to.col]) {
-    throw new Error("No path found!");
-  }
-
-  return reconstructPath(pathMap);
-}
-
-export function getNeighbours(
-  cell: Cell,
-  grid: (0 | 1)[][],
-  includeDiagonalNeighbours = false,
-): Cell[] {
-  const rows = grid.length;
-  const cols = grid[0].length;
-  const neighbours: Cell[] = [];
-
-  const neighbourDiffs = includeDiagonalNeighbours
-    ? [
-        [-1, -1],
-        [-1, 0],
-        [-1, 1],
-        [0, -1],
-        [0, 1],
-        [1, -1],
-        [1, 0],
-        [1, 1],
-      ]
-    : [
-        [-1, 0],
-        [0, 1],
-        [1, 0],
-        [0, -1],
-      ];
-
-  for (const [r, c] of neighbourDiffs) {
-    const n = { row: cell.row + r, col: cell.col + c };
-    if (n.row !== -1 && n.col !== -1 && n.row !== rows && n.col !== cols)
-      neighbours.push(n);
-  }
-
-  return neighbours;
 }

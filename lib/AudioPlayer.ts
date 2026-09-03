@@ -1,121 +1,255 @@
+type PreLoadedAudio = {
+  buffer: AudioBuffer;
+  isLoaded: true;
+};
+
+type NotPreLoadedAudio = {
+  buffer: null;
+  isLoaded: false;
+  path: string;
+};
+
 export default class AudioPlayer {
-    onoff: boolean;
-    sounds: Map<string, string>;
-    buffers: Map<string, AudioBuffer>;
-    playingAudioNodes: Map<string, AudioBufferSourceNode>;
-    audioCtx: AudioContext;
-    volumeNode: GainNode;
+  onoff: boolean;
+  private sounds: Map<string, { path: string; preload: boolean }>;
+  private buffers: Map<string, PreLoadedAudio | NotPreLoadedAudio>;
 
-    constructor() {
-        this.sounds = new Map();
-        this.buffers = new Map();
-        this.playingAudioNodes = new Map();
-        this.onoff = false;
+  private playingAudioNodes: Map<
+    string,
+    { source: AudioBufferSourceNode; volume: GainNode; isOn: boolean }
+  >;
+  private audioCtx: AudioContext;
+  private muteNode: GainNode;
 
-        this.audioCtx = new window.AudioContext();
-        this.volumeNode = this.audioCtx.createGain();
-        this.volumeNode.connect(this.audioCtx.destination);
-    }
+  constructor() {
+    this.sounds = new Map();
+    this.buffers = new Map();
+    this.playingAudioNodes = new Map();
+    this.onoff = false;
 
-    async add(id: string, path: string): Promise<void> {
-        this.sounds.set(id, path);
-    }
+    this.audioCtx = new window.AudioContext();
+    this.muteNode = this.audioCtx.createGain();
+    this.muteNode.connect(this.audioCtx.destination);
+  }
 
-    async load(): Promise<void> {
-        const promises: Promise<void>[] = [];
+  add(id: string, path: string, preload: boolean = true): void {
+    this.sounds.set(id, { path, preload });
+  }
 
-        for (const [id, path] of this.sounds) {
-            promises.push(
-                (async () => {
-                    try {
-                        const response = await fetch(path);
-                        const arrayBuffer = await response.arrayBuffer();
-                        const audioBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
-                        this.buffers.set(id, audioBuffer);
-                    } catch (err: any) {
-                        throw new AudioFetchError(path, err);
-                    }
-                })()
-            );
-        }
+  async load(): Promise<void> {
+    const promises: Promise<PreLoadedAudio>[] = [];
 
-        await Promise.all(promises);
-        this.sounds.clear();
-    }
-
-    play(id: string, loop = false): void {
-        if (!this.onoff) throw new AudioPlayerOffStateError("play");
-
-        if (this.playingAudioNodes.has(id)) return; // already playing
-
-        if (this.audioCtx.state === "suspended") this.audioCtx.resume();
-
-        const audioBuffer = this.buffers.get(id);
-        if (!audioBuffer) throw new AudioNotFoundError(id);
-
-        const audioSource = this.audioCtx.createBufferSource();
-        audioSource.buffer = audioBuffer;
-        audioSource.loop = loop;
-
-        audioSource.connect(this.volumeNode);
-        audioSource.start();
-
-        this.playingAudioNodes.set(id, audioSource);
-        audioSource.addEventListener("ended", () => {
-            this.playingAudioNodes.delete(id);
+    for (const [id, audio] of this.sounds) {
+      if (audio.preload) {
+        promises.push(this.loadAudio(id, audio.path));
+      } else {
+        this.buffers.set(id, {
+          buffer: null,
+          isLoaded: false,
+          path: audio.path,
         });
+      }
     }
 
-    isPlaying(id: string): boolean {
-        return this.playingAudioNodes.has(id);
+    await Promise.all(promises);
+
+    this.sounds.clear();
+  }
+
+  private async loadAudio(id: string, path: string): Promise<PreLoadedAudio> {
+    try {
+      const response = await fetch(path);
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBuffer = await this.audioCtx.decodeAudioData(arrayBuffer);
+      const audio: PreLoadedAudio = { buffer: audioBuffer, isLoaded: true };
+      this.buffers.set(id, audio);
+      return audio;
+    } catch (err: any) {
+      throw new AudioFetchError(path, err);
+    }
+  }
+
+  isMuted(): boolean {
+    return this.muteNode.gain.value === 0;
+  }
+
+  toggleSound(): void {
+    this.muteNode.gain.value = this.isMuted() ? 1 : 0;
+  }
+
+  async playlist(sounds: string[], volume: number = 1, loop = false): Promise<void> {
+  
+    if (!this.onoff) return;
+
+    await this.play(sounds[0], volume);
+
+    const audio = this.playingAudioNodes.get(sounds[0]);
+
+    if (audio === undefined)
+      throw new Error("Failed to start next playlist track");
+
+    audio.source.addEventListener("ended", () => {
+      if (!this.onoff) return;
+      this.nextInPlaylist(sounds, 0, volume, loop);
+    });
+  }
+
+  private async nextInPlaylist(
+    sounds: string[],
+    currIdx: number,
+    volume: number = 1,
+    loop = false,
+  ): Promise<void> {
+    if (!this.onoff) return;
+    if (currIdx === sounds.length - 1) {
+      if (loop) {
+        currIdx = 0;
+      } else {
+        return;
+      }
+    } else {
+      currIdx += 1;
     }
 
-    stop(id: string): void {
-        const source = this.playingAudioNodes.get(id);
-        if (source) {
-            source.stop();
-        }
+    await this.play(sounds[currIdx], volume);
+
+    const audio = this.playingAudioNodes.get(sounds[currIdx]);
+
+    if (audio === undefined)
+      throw new Error("Failed to start next playlist track");
+
+    audio.source.addEventListener("ended", () => {
+      this.nextInPlaylist(sounds, currIdx, volume, loop);
+    });
+  }
+
+  async play(id: string, volume: number = 1, loop = false): Promise<void> {
+
+    if (!this.onoff) throw new AudioPlayerOffStateError("play");
+
+    if (this.playingAudioNodes.has(id)) return;
+
+    if (this.audioCtx.state === "suspended") {
+      console.error("Audio context suspended");
     }
 
-    setVolume(volume: number): void {
-        if (volume < 0 || volume > 1) throw new InvalidVolumeRangeError(volume);
-        this.volumeNode.gain.setValueAtTime(volume, this.audioCtx.currentTime);
+    const audio = this.buffers.get(id);
+    if (audio === undefined) throw new AudioNotFoundError(id);
+
+    const audioSource = this.audioCtx.createBufferSource();
+
+    if (audio.isLoaded) {
+      audioSource.buffer = audio.buffer;
+    } else {
+      this.buffers.delete(id);
+      const loadedAudio = await this.loadAudio(id, audio.path);
+      audioSource.buffer = loadedAudio.buffer;
     }
 
-    onOffSwitch(): void {
-        this.onoff = !this.onoff;
-        if (!this.onoff) this.turnOffAllAudios();
-    }
+    audioSource.loop = loop;
 
-    private turnOffAllAudios(): void {
-        for (const audioSource of this.playingAudioNodes.values()) {
-            audioSource.stop();
-        }
+    const volumeNode = this.audioCtx.createGain();
+    volumeNode.connect(this.muteNode);
+
+    volumeNode.gain.setValueAtTime(volume, this.audioCtx.currentTime);
+
+    audioSource.connect(volumeNode);
+    audioSource.start();
+
+    this.playingAudioNodes.set(id, {
+      source: audioSource,
+      volume: volumeNode,
+      isOn: true,
+    });
+
+    audioSource.addEventListener("ended", () => {
+      this.playingAudioNodes.delete(id);
+    });
+  }
+
+  isPlaying(id: string): boolean {
+    return this.playingAudioNodes.has(id);
+  }
+
+  stop(id: string): void {
+    const audio = this.playingAudioNodes.get(id);
+
+    if (audio === undefined) throw new Error("Audio not on");
+
+    audio.source.stop();
+  }
+
+  setVolume(id: string, volume: number): void {
+    const audio = this.playingAudioNodes.get(id);
+
+    if (audio === undefined) throw new Error("Audio not on");
+
+    if (volume < 0 || volume > 1) throw new InvalidVolumeRangeError(volume);
+
+    audio.volume.gain.setValueAtTime(volume, this.audioCtx.currentTime);
+  }
+
+  onOffSwitch(): void {
+    this.onoff = !this.onoff;
+    if (!this.onoff) this.turnOffAllAudios();
+  }
+
+  beep(
+    frequency: number = 1000,
+    duration: number = 200,
+    volume: number = 0.2,
+    type: OscillatorType = "square",
+  ) {
+    const audioCtx = new AudioContext();
+
+    const oscillator = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    oscillator.type = type;
+    oscillator.frequency.value = frequency;
+
+    gain.gain.value = volume;
+
+    oscillator.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    oscillator.start();
+    oscillator.stop(audioCtx.currentTime + duration / 1000);
+
+    oscillator.onended = () => {
+      audioCtx.close();
+    };
+  }
+
+  private turnOffAllAudios(): void {
+    for (const a of this.playingAudioNodes.values()) {
+      a.source.stop();
     }
+  }
 }
 
 /* ------------------ Error classes ------------------ */
 
 export class InvalidVolumeRangeError extends Error {
-    constructor(volume: number) {
-        super(`Volume: ${volume} is not within valid range 0-1.`);
-    }
+  constructor(volume: number) {
+    super(`Volume: ${volume} is not within valid range 0-1.`);
+  }
 }
 
 export class AudioNotFoundError extends Error {
-    constructor(id: string) {
-        super(`Audio with id: ${id} does not exist.`);
-    }
+  constructor(id: string) {
+    super(`Audio with id: ${id} does not exist.`);
+  }
 }
 
 export class AudioFetchError extends Error {
-    constructor(path: string, error: Error) {
-        super(`Unable to fetch audio file: ${path}. Error: ${error.message}`);
-    }
+  constructor(path: string, error: Error) {
+    super(`Unable to fetch audio file: ${path}. Error: ${error.message}`);
+  }
 }
 
 export class AudioPlayerOffStateError extends Error {
-    constructor(funcName: string) {
-        super(`Failed to execute: ${funcName}`);
-    }
+  constructor(funcName: string) {
+    super(`Failed to execute: ${funcName}`);
+  }
 }

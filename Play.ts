@@ -1,5 +1,4 @@
 import { Scene } from "./lib/index.ts";
-import { BASE_URL } from "./config.js";
 
 export default class Play extends Scene {
 
@@ -12,10 +11,6 @@ export default class Play extends Scene {
     }
 
     update() {
-
-    }
-
-    draw(ctx: CanvasRenderingContext2D) {
 
     }
 

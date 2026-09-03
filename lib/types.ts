@@ -1,7 +1,8 @@
 export type Vec2 = { x: number; y: number };
 
 export type Direction = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-export type Cell = { row: number; col: number };
+export type RelativeDirection = "f" | "b" | "l" | "r";
+export type Tile = { row: number; col: number };
 export type AsepriteRect = { x: number; y: number; w: number; h: number };
 
 export type AsepriteFrameData = {

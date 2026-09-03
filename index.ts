@@ -2,7 +2,6 @@ import { Art } from "./lib/index.ts";
 import { createDebugLogger } from "./debugger.ts";
 import Play from "./Play.ts";
 import Pause from "./Pause.ts";
-import "./audio-player/AudioPlayerElement.ts";
 
 export const debug = createDebugLogger(true);
 
@@ -12,7 +11,7 @@ const art = new Art({
     width: 320,
     height: 180,
     tileSize: 16,
-    canvas: "#canvas-art",
+    container: "#canvas-art",
     displayGrid: false,
 });
 

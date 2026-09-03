@@ -1,6 +1,5 @@
 
 import { Scene } from "./lib/index.ts";
-import { BASE_URL } from "./config.js";
 
 
 export default class Pause extends Scene {
@@ -11,10 +10,6 @@ export default class Pause extends Scene {
 
     async init() {
       
-    }
-
-    draw(ctx: CanvasRenderingContext2D) {
-    
     }
 
     start(){

@@ -9,25 +9,18 @@ export type ArtConfig = {
   height: number;
   tileSize: number;
   play: Scene;
-  pause: Scene;
+  pause?: Scene;
   container?: string;
-  displayGrid: boolean;
+  displayGrid?: boolean;
   gridColor?: string;
   services?: Record<string, any>;
-  scale?: "hd" | "4k";
+  loading?: string;
+  onError?: (e: Error) => void;
 };
 
 const CONTAINER_SELECTOR_DEFAULT = "#art-container";
 
 export default class Art {
-  keys: {
-    up: boolean;
-    right: boolean;
-    down: boolean;
-    left: boolean;
-    space: boolean;
-  };
-
   spritesheets!: SpritesheetsManager;
   images: ImagesManager;
   audio: AudioPlayer;
@@ -38,18 +31,17 @@ export default class Art {
   tileSize: number;
   displayGrid: boolean;
   gridColor: string;
-  scale: "hd" | "4k" | null;
 
   isPlaying: boolean;
 
   private config: ArtConfig;
-  private startTime: Date | null;
   private currId: number;
   private renderer!: Renderer;
+  private onErrorCb: ((e: Error) => void) | null;
 
   constructor(config: ArtConfig) {
     this.images = new ImagesManager();
-    this.renderer = new Renderer(this, config);
+    this.renderer = new Renderer(this, config, this.onRenderError.bind(this));
 
     this.spritesheets = new SpritesheetsManager();
     this.audio = new AudioPlayer();
@@ -62,30 +54,10 @@ export default class Art {
     this.tileSize = config.tileSize;
     this.displayGrid = config.displayGrid ?? false;
     this.gridColor = config.gridColor ?? "white";
-    this.scale = config.scale ?? null;
     this.services = config.services ?? null;
+    this.onErrorCb = config.onError ?? null;
 
-    this.keys = {
-      up: false,
-      right: false,
-      down: false,
-      left: false,
-      space: false,
-    };
-
-    this.startTime = null;
     this.currId = -1;
-  }
-
-  enterFullScreen(): void {
-    const body = document.querySelector("body");
-    if (!body) throw new Error("body not found");
-
-    if (!document.fullscreenElement) {
-      body.requestFullscreen();
-    } else {
-      document.exitFullscreen();
-    }
   }
 
   getId(): number {
@@ -94,67 +66,82 @@ export default class Art {
   }
 
   async init(): Promise<void> {
-    this.startTime = new Date();
+    if (this.config.loading) {
+      const loadingEl = document.querySelector(this.config.loading);
+
+      if (loadingEl !== null) {
+        loadingEl.classList.remove("hidden");
+      }
+    }
 
     this.config.play.art = this;
-    this.config.pause.art = this;
 
     await this.config.play.init();
-    await this.config.pause.init();
+
+    if (this.config.pause !== undefined) {
+      this.config.pause.art = this;
+      await this.config.pause?.init();
+    }
 
     await this.renderer.init(
       this.config.container ?? CONTAINER_SELECTOR_DEFAULT,
     );
 
-    window.addEventListener("keydown", (e) => {
-      const key = e.key.toLowerCase();
-      if (["arrowup", "w"].includes(key)) this.keys.up = true;
-      if (["arrowright", "d"].includes(key)) this.keys.right = true;
-      if (["arrowdown", "s"].includes(key)) this.keys.down = true;
-      if (["arrowleft", "a"].includes(key)) this.keys.left = true;
-      if (key === " ") this.keys.space = true;
-    });
+    this.renderer.start();
 
-    window.addEventListener("keyup", (e) => {
-      const key = e.key.toLowerCase();
-      if (["arrowup", "w"].includes(key)) this.keys.up = false;
-      if (["arrowright", "d"].includes(key)) this.keys.right = false;
-      if (["arrowdown", "s"].includes(key)) this.keys.down = false;
-      if (["arrowleft", "a"].includes(key)) this.keys.left = false;
-      if (key === " ") this.keys.space = false;
-    });
-    try {
-      this.renderer.run();
-    } catch (e) {
-      if (this.startTime) {
-        const { hours, minutes, seconds } = diffHMS(new Date(), this.startTime);
-        console.log(`Time since start ${hours}:${minutes}:${seconds}`);
+    if (this.config.pause) {
+      this.config.pause.start();
+    } else {
+      this.config.play.start();
+    }
+
+    if (this.config.loading) {
+      const loadingEl = document.querySelector(this.config.loading);
+
+      if (loadingEl !== null) {
+        loadingEl.classList.add("hidden");
       }
-      console.error(e);
     }
   }
 
   async play(): Promise<void> {
-    this.audio.onOffSwitch();
-    this.config.play.start();
-    this.config.pause.stop();
+    if (!this.audio.onoff) this.audio.onOffSwitch();
+
     this.isPlaying = true;
+    this.config.play.start();
+
+    // If we have a special pause screen, stop the pause screen
+    if (this.config.pause) {
+      this.config.pause.stop();
+    }
   }
 
   async pause(): Promise<void> {
-    this.audio.onOffSwitch();
-    this.config.pause.start();
-    this.config.play.stop();
-    this.isPlaying = false;
-  }
-}
+    if (this.audio.onoff) this.audio.onOffSwitch();
 
-function diffHMS(date1: Date, date2: Date) {
-  let diff = Math.abs(date2.getTime() - date1.getTime());
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  diff -= hours * 1000 * 60 * 60;
-  const minutes = Math.floor(diff / (1000 * 60));
-  diff -= minutes * 1000 * 60;
-  const seconds = Math.floor(diff / 1000);
-  return { hours, minutes, seconds };
+    this.isPlaying = false;
+    this.config.play.stop();
+    // If we have a special pause screen, start it
+    if (this.config.pause) {
+      this.config.pause.start();
+    }
+  }
+
+  private onRenderError(
+    e: Error,
+    runtime: { hours: number; minutes: number; seconds: number },
+  ): void {
+
+    console.error(
+      `Art error after ${runtime.hours}:${runtime.minutes}:${runtime.seconds}`,
+      e,
+    );
+
+    if (this.audio.onoff) {
+      this.audio.onOffSwitch();
+    }
+
+    if (this.onErrorCb) this.onErrorCb(e);
+    else throw e;
+  }
 }

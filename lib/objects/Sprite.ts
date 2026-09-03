@@ -1,16 +1,12 @@
 import AnimationManager from "../animations/AnimationManager.js";
 import ArtObject from "./ArtObject.ts";
 import type Scene from "../Scene.js";
+import type Path from "../Path.ts";
 import type { Vec2, Direction } from "../types.ts";
-import { posToCell } from "../utils.ts";
-
-type PathState = {
-  isOnPath: boolean;
-  hasReachedGoal: boolean;
-};
+import { posToTile } from "../utils.ts";
+import type AnimationSequence from "../animations/AnimationSequence.ts";
 
 export default abstract class Sprite extends ArtObject {
-  pos: Vec2;
   vel: Vec2;
   width: number;
   height: number;
@@ -20,7 +16,9 @@ export default abstract class Sprite extends ArtObject {
   animations: AnimationManager;
   drawOffset: Vec2;
 
-  path: PathState;
+  currentPath: Path | null;
+  currentAnimationSequence: AnimationSequence | null;
+  isVisible: boolean;
 
   constructor(
     scene: Scene,
@@ -29,8 +27,7 @@ export default abstract class Sprite extends ArtObject {
     height: number,
     direction: Direction,
   ) {
-    super(scene);
-    this.pos = pos;
+    super(scene, pos);
     this.vel = { x: 0, y: 0 };
     this.width = width;
     this.height = height;
@@ -39,18 +36,31 @@ export default abstract class Sprite extends ArtObject {
     this.halfHeight = height / 2;
     this.animations = new AnimationManager(this);
     this.drawOffset = { x: 0, y: 0 };
-    this.path = {
-      isOnPath: false,
-      hasReachedGoal: false,
-    };
+
+    this.currentPath = null;
+    this.currentAnimationSequence = null;
+    this.isVisible = true;
   }
 
   abstract update(dt: number): void;
 
-  updateMovement(): void {}
+  isOnActivePath(): boolean {
+    return (
+      this.currentPath !== null &&
+      !this.currentPath.isWaiting &&
+      !this.currentPath.hasReachedGoal
+    );
+  }
 
-  getGridCell() {
-    return posToCell(this.pos, this.scene.art!.tileSize);
+  isOnActiveAnimationSequence(): boolean {
+    return (
+      this.currentAnimationSequence !== null &&
+      !this.currentAnimationSequence.isFinished
+    );
+  }
+
+  getTile() {
+    return posToTile(this.pos, this.scene.art!.tileSize);
   }
 
   isFacingEast(): boolean {
